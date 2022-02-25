@@ -1,4 +1,3 @@
-
 use super::Decoder;
 
 /// Position within a text file.
