@@ -85,8 +85,54 @@ impl Lexer {
             '^' => self.scan_caret(),
             '.' => self.scan_dot(),
             ':' => self.scan_colon(),
+            '_' | 'a'..='z' | 'A'..='Z' => self.scan_identifier(ch),
 
             _ => Err( LexerError::Unexpected( self.pos(), ch ) )
+        }
+    }
+
+    fn scan_identifier(&mut self, ch: char) -> Result<Token, LexerError> {
+        let start = self.pos();
+        let mut v= vec![ch];
+        loop {
+            let next_char = match self.stream.peek() {
+                Err(()) => break,
+                Ok(None) => break,
+                Ok(Some(c)) => c,
+            };
+            match next_char {
+                '_' | 'a'..='z' | 'A'..='Z' | '0'..='9' => {
+                    self.stream.advance();
+                    v.push(next_char);
+                },
+                _ => break,
+            }
+        }
+        let str : String = v.into_iter().collect();
+        match str.as_ref() {
+            "import"    => Ok( Token::KwImport(start) ),
+            "i8"        => Ok( Token::KwTypeI8(start) ),
+            "i16"       => Ok( Token::KwTypeI16(start) ),
+            "i32"       => Ok( Token::KwTypeI32(start) ),
+            "i64"       => Ok( Token::KwTypeI64(start) ),
+            "u8"        => Ok( Token::KwTypeU8(start) ),
+            "u16"       => Ok( Token::KwTypeU16(start) ),
+            "u32"       => Ok( Token::KwTypeU32(start) ),
+            "u64"       => Ok( Token::KwTypeU64(start) ),
+            "bool"      => Ok( Token::KwTypeBool(start) ),
+            "f32"       => Ok( Token::KwTypeF32(start) ),
+            "f64"       => Ok( Token::KwTypeF64(start) ),
+            "char"      => Ok( Token::KwTypeChar(start) ),
+            "fn"        => Ok( Token::KwFn(start) ),
+            "struct"    => Ok( Token::KwStruct(start) ),
+            "enum"      => Ok( Token::KwEnum(start) ),
+            "type"      => Ok( Token::KwType(start) ),
+            "break"     => Ok( Token::KwBreak(start) ),
+            "continue"  => Ok( Token::KwContinue(start) ),
+            "expect"    => Ok( Token::KwExpect(start) ),
+            "let"       => Ok( Token::KwLet(start) ),
+            "mut"       => Ok( Token::KwMut(start) ),
+            _           => Ok( Token::Identifier {start, source: str, end: self.pos() })
         }
     }
 
@@ -254,6 +300,52 @@ impl Lexer {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_keywords() {
+        let txt = concat!("import i8 i16 i32 i64 u8 u16 u32 u64 \n",
+            "bool f32 f64 char fn struct enum\n",
+            "type break continue expect let mut");
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+
+        assert_eq!(lxr.get(), Ok(Token::KwImport( Position{ column: 1, line: 1} )));
+        assert_eq!(lxr.get(), Ok(Token::KwTypeI8( Position{ column: 8, line: 1} )));
+        assert_eq!(lxr.get(), Ok(Token::KwTypeI16( Position{ column: 11, line: 1} )));
+        assert_eq!(lxr.get(), Ok(Token::KwTypeI32( Position{ column: 15, line: 1} )));
+        assert_eq!(lxr.get(), Ok(Token::KwTypeI64( Position{ column: 19, line: 1} )));
+        assert_eq!(lxr.get(), Ok(Token::KwTypeU8( Position{ column: 23, line: 1} )));
+        assert_eq!(lxr.get(), Ok(Token::KwTypeU16( Position{ column: 26, line: 1} )));
+        assert_eq!(lxr.get(), Ok(Token::KwTypeU32( Position{ column: 30, line: 1} )));
+        assert_eq!(lxr.get(), Ok(Token::KwTypeU64( Position{ column: 34, line: 1} )));
+
+        assert_eq!(lxr.get(), Ok(Token::KwTypeBool( Position{ column: 1, line: 2} )));
+        assert_eq!(lxr.get(), Ok(Token::KwTypeF32( Position{ column: 6, line: 2} )));
+        assert_eq!(lxr.get(), Ok(Token::KwTypeF64( Position{ column: 10, line: 2} )));
+        assert_eq!(lxr.get(), Ok(Token::KwTypeChar( Position{ column: 14, line: 2} )));
+        assert_eq!(lxr.get(), Ok(Token::KwFn( Position{ column: 19, line: 2} )));
+        assert_eq!(lxr.get(), Ok(Token::KwStruct( Position{ column: 22, line: 2} )));
+        assert_eq!(lxr.get(), Ok(Token::KwEnum( Position{ column: 29, line: 2} )));
+
+        assert_eq!(lxr.get(), Ok(Token::KwType( Position{ column: 1, line: 3} )));
+        assert_eq!(lxr.get(), Ok(Token::KwBreak( Position{ column: 6, line: 3} )));
+        assert_eq!(lxr.get(), Ok(Token::KwContinue( Position{ column: 12, line: 3} )));
+        assert_eq!(lxr.get(), Ok(Token::KwExpect( Position{ column: 21, line: 3} )));
+        assert_eq!(lxr.get(), Ok(Token::KwLet( Position{ column: 28, line: 3} )));
+        assert_eq!(lxr.get(), Ok(Token::KwMut( Position{ column: 32, line: 3} )));
+    }
+
+    #[test]
+    fn test_identifier() {
+        let txt = "my_identifier _anotherOne1 Zzz\n";
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+
+        assert_eq!(lxr.get(), Ok(Token::Identifier{start: Position{ line: 1, column: 1},
+            source: "my_identifier".to_string(), end: Position{ line:1, column: 13}} ) );
+        assert_eq!(lxr.get(), Ok(Token::Identifier{start: Position{ line: 1, column: 15},
+            source: "_anotherOne1".to_string(), end: Position{ line:1, column: 26}} ) );
+        assert_eq!(lxr.get(), Ok(Token::Identifier{start: Position{ line: 1, column: 28},
+            source: "Zzz".to_string(), end: Position{ line:1, column: 30}} ) );
+    }
 
     #[test]
     fn test_colon() {
