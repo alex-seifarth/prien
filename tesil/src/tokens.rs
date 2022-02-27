@@ -63,6 +63,12 @@ pub enum Token {
         source: String,
     },
 
+    // double slash comment // until end of line
+    Comment {
+        start: utf8::Position,
+        comment: String,
+    },
+
     // Integer literal (unsigned)
     // Decimal: ([0-9]('[0-9])?)+
     // Binary: (0b|0B) ([01] ('[01])?)+

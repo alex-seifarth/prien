@@ -206,6 +206,21 @@ impl Lexer {
                 self.stream.advance();
                 Ok(Token::DivAssign(pos))
             },
+            Ok(Some('/')) => {
+                self.stream.advance();
+                let mut str = vec![];
+                loop {
+                    match self.stream.peek() {
+                        Err(()) => break,
+                        Ok(Some('\n')) | Ok(None) => break,
+                        Ok(Some(ch)) => {
+                            self.stream.advance();
+                            str.push(ch);
+                        },
+                    }
+                }
+                Ok(Token::Comment{start: pos, comment: str.into_iter().collect()})
+            },
             _ => Ok(Token::Slash(pos))
         }
     }
@@ -300,6 +315,24 @@ impl Lexer {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_comments() {
+        let txt = concat!(
+            "varname // this is a variable \n",
+            "//full line comment\n",
+            "!"
+        );
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+        assert_eq!(lxr.get(), Ok( Token::Identifier {start: Position{ line: 1, column: 1},
+            end: Position{ line: 1, column: 7 }, source: "varname".to_string()}));
+        assert_eq!(lxr.get(), Ok( Token::Comment {start: Position{ line: 1, column: 9},
+            comment: " this is a variable ".to_string()}));
+        assert_eq!(lxr.get(), Ok( Token::Comment {start: Position{ line: 2, column: 1},
+            comment: "full line comment".to_string()}));
+        assert_eq!(lxr.get(), Ok( Token::ExclamationMark( Position{ line: 3, column: 1})));
+        assert_eq!(lxr.get(), Ok( Token::EndOfFile));
+    }
 
     #[test]
     fn test_keywords() {
