@@ -96,6 +96,12 @@ pub enum Token {
         source: String,
     },
 
+    // '.' | '\u[0-9a-fA-F]{4}'
+    Char {
+        start: utf8::Position,
+        ch: char
+    },
+
     KwImport(utf8::Position),       // 'import'
     KwTypeI8(utf8::Position),       // 'i8'
     KwTypeI16(utf8::Position),      // 'i16'

@@ -5,6 +5,7 @@ use util::utf8::{Stream, Position};
 pub enum LexerError {
     Unspecified,
     Utf8Error(Position),
+    UnexpectedEndOfFile(Position),
     Unexpected(Position, char),
 }
 
@@ -86,9 +87,59 @@ impl Lexer {
             '.' => self.scan_dot(),
             ':' => self.scan_colon(),
             '_' | 'a'..='z' | 'A'..='Z' => self.scan_identifier(ch),
+            '\'' => self.scan_char_literal(),
 
             _ => Err( LexerError::Unexpected( self.pos(), ch ) )
         }
+    }
+
+    fn scan_char_literal(&mut self) -> Result<Token, LexerError> {
+        let start = self.pos();
+        return match self.stream.get() {
+            Err(_) => Err(LexerError::Utf8Error(start)),
+            Ok(None) => Err(LexerError::UnexpectedEndOfFile(start)),
+            Ok(Some('\\')) => {
+                let ec = self.scan_escaped_char()?;
+                self.check_for_char('\'')?;
+                return Ok(Token::Char { start, ch: ec })
+            },
+            Ok(Some(c)) => {
+                self.check_for_char('\'')?;
+                return Ok(Token::Char { start, ch: c })
+            }
+        }
+    }
+
+    fn scan_escaped_char(&mut self) -> Result<char, LexerError> {
+        match self.stream.get() {
+            Err( () ) => return Err( LexerError::Utf8Error(self.pos())),
+            Ok( None ) => return Err( LexerError::UnexpectedEndOfFile(self.pos())),
+            Ok( Some('n') ) => return Ok( '\n' ),
+            Ok( Some('t') ) => return Ok( '\t' ),
+            Ok( Some('r') ) => return Ok( '\r' ),
+            Ok( Some('\\') ) => return Ok( '\\' ),
+            Ok( Some('\'') ) => return Ok( '\'' ),
+            Ok( Some('"') ) => return Ok( '"' ),
+            Ok( Some('u')) | Ok( Some('U')) => {},
+            Ok( Some(c) ) => return Err( LexerError::Unexpected(self.pos(), c)),
+        };
+        self.check_for_char('{')?;
+
+        self.check_for_char('}')?;
+        Ok( 'a' )
+    }
+
+    fn check_for_char(&mut self, ch: char) -> Result<(), LexerError> {
+        match self.stream.get() {
+            Err( () ) => return Err( LexerError::Utf8Error(self.pos())),
+            Ok( None ) => return Err( LexerError::UnexpectedEndOfFile(self.pos())),
+            Ok( Some(c) ) => {
+                if c == ch {
+                    return Ok( () )
+                }
+                return Err( LexerError::Unexpected(self.pos(), c))
+            },
+        };
     }
 
     fn scan_identifier(&mut self, ch: char) -> Result<Token, LexerError> {
@@ -315,6 +366,22 @@ impl Lexer {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_char_literal() {
+        let txt = "'a' 'z''\\n' '\\t' '\\r' '\\\\' '\\\'' '\\\"'";
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+
+        assert_eq!(lxr.get(), Ok( Token::Char{ start: Position{ line:1, column: 1}, ch: 'a' } ) );
+        assert_eq!(lxr.get(), Ok( Token::Char{ start: Position{ line:1, column: 5}, ch: 'z' } ) );
+        assert_eq!(lxr.get(), Ok( Token::Char{ start: Position{ line:1, column: 8}, ch: '\n' } ) );
+        assert_eq!(lxr.get(), Ok( Token::Char{ start: Position{ line:1, column: 13}, ch: '\t' } ) );
+        assert_eq!(lxr.get(), Ok( Token::Char{ start: Position{ line:1, column: 18}, ch: '\r' } ) );
+        assert_eq!(lxr.get(), Ok( Token::Char{ start: Position{ line:1, column: 23}, ch: '\\' } ) );
+        assert_eq!(lxr.get(), Ok( Token::Char{ start: Position{ line:1, column: 28}, ch: '\'' } ) );
+        assert_eq!(lxr.get(), Ok( Token::Char{ start: Position{ line:1, column: 33}, ch: '"' } ) );
+
+    }
 
     #[test]
     fn test_comments() {
