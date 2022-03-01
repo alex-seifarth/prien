@@ -1,12 +1,13 @@
 use super::Token;
 use util::utf8::{Stream, Position};
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LexerError {
     Unspecified,
     Utf8Error(Position),
     UnexpectedEndOfFile(Position),
     Unexpected(Position, char),
+    InvalidEscapedUnicode(Position, String, u32),
 }
 
 pub struct Lexer {
@@ -99,7 +100,7 @@ impl Lexer {
             Err(_) => Err(LexerError::Utf8Error(start)),
             Ok(None) => Err(LexerError::UnexpectedEndOfFile(start)),
             Ok(Some('\\')) => {
-                let ec = self.scan_escaped_char()?;
+                let ec = self.scan_escaped_char(&start)?;
                 self.check_for_char('\'')?;
                 return Ok(Token::Char { start, ch: ec })
             },
@@ -110,7 +111,7 @@ impl Lexer {
         }
     }
 
-    fn scan_escaped_char(&mut self) -> Result<char, LexerError> {
+    fn scan_escaped_char(&mut self, start: &Position) -> Result<char, LexerError> {
         match self.stream.get() {
             Err( () ) => return Err( LexerError::Utf8Error(self.pos())),
             Ok( None ) => return Err( LexerError::UnexpectedEndOfFile(self.pos())),
@@ -124,9 +125,43 @@ impl Lexer {
             Ok( Some(c) ) => return Err( LexerError::Unexpected(self.pos(), c)),
         };
         self.check_for_char('{')?;
-
+        let unicode = self.scan_hex_digits(4)?;
         self.check_for_char('}')?;
-        Ok( 'a' )
+        if let Some(uc) = char::from_u32(unicode.0 ) {
+            return Ok( uc )
+        }
+        Err( LexerError::InvalidEscapedUnicode(start.clone(), unicode.1, unicode.0 ))
+    }
+
+    fn scan_hex_digits(&mut self, count: i32) -> Result<(u32, String), LexerError>{
+        let mut str = vec![];
+        let mut value: u32 = 0;
+        for _n in 0..count {
+            let ch = match self.stream.peek() {
+                Err(()) => return Err( LexerError::Utf8Error(self.pos()) ),
+                Ok( None ) => return Err( LexerError::UnexpectedEndOfFile(self.pos())),
+                Ok(Some(c)) => c,
+            };
+            match ch {
+                '0'..='9' | 'a'..='f' | 'A'..='F' => {
+                    self.stream.advance();
+                    str.push(ch);
+                    value = (value << 4) + Lexer::hex_digit_2_value(ch);
+                },
+                _ => {}
+            }
+        }
+        Ok( (value, str.into_iter().collect()) )
+    }
+
+    fn hex_digit_2_value(ch: char) -> u32 {
+        match ch {
+            '0' => 0, '1' => 1, '2' => 2, '3' => 3, '4' => 4,
+            '5' => 5, '6' => 6, '7' => 7, '8' => 8, '9' => 9,
+            'a' | 'A' => 10, 'b' | 'B' => 11, 'c' | 'C' => 12,
+            'd' | 'D' => 13, 'e' | 'E' => 14, 'f' | 'F' => 15,
+            _ => panic!("character is not a hex digit")
+        }
     }
 
     fn check_for_char(&mut self, ch: char) -> Result<(), LexerError> {
@@ -366,6 +401,15 @@ impl Lexer {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_char_literal_unicode() {
+        let txt = " '\\u{0231}' '\\u{1023}'";
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+
+        assert_eq!(lxr.get(), Ok( Token::Char{ start: Position{ line: 1, column: 2}, ch: '\u{0231}' }));
+        assert_eq!(lxr.get(), Ok( Token::Char{ start: Position{ line: 1, column: 13}, ch: '\u{1023}' }));
+    }
 
     #[test]
     fn test_char_literal() {
