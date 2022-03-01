@@ -96,7 +96,7 @@ pub enum Token {
         source: String,
     },
 
-    // '.' | '\u[0-9a-fA-F]{4}'
+    // '.' | '\u{[0-9a-fA-F]}{4}'
     Char {
         start: utf8::Position,
         ch: char

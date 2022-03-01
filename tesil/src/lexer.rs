@@ -89,9 +89,28 @@ impl Lexer {
             ':' => self.scan_colon(),
             '_' | 'a'..='z' | 'A'..='Z' => self.scan_identifier(ch),
             '\'' => self.scan_char_literal(),
+            '"' => self.scan_string(),
 
             _ => Err( LexerError::Unexpected( self.pos(), ch ) )
         }
+    }
+
+    fn scan_string(&mut self) -> Result<Token, LexerError> {
+        let start = self.pos();
+        let mut str = vec![];
+        loop {
+            match self.stream.get() {
+                Err(()) => return Err( LexerError::Utf8Error(self.pos()) ),
+                Ok( None ) => return Err( LexerError::UnexpectedEndOfFile(self.pos()) ),
+                Ok( Some('"') ) => break,
+                Ok( Some('\\') ) => {
+                    let ec = self.scan_escaped_char(&start)?;
+                    str.push(ec);
+                },
+                Ok( Some(c) ) => str.push(c),
+            }
+        }
+        Ok( Token::String{ start, end: self.pos(), source: str.into_iter().collect() } )
     }
 
     fn scan_char_literal(&mut self) -> Result<Token, LexerError> {
@@ -403,12 +422,33 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_string() {
+        let txt = concat!(
+            " \"\" \n",
+            "\"a string\" \n",
+            "\"a line\\nbreak and \\u{0102} \" \n",
+            "\"\\\" a single quote\" \n"
+        );
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+
+        assert_eq!(lxr.get(), Ok( Token::String{ start: Position{ line: 1, column: 2},
+            end: Position{ line: 1, column: 3}, source: "".to_string()}));
+        assert_eq!(lxr.get(), Ok( Token::String{ start: Position{ line: 2, column: 1},
+            end: Position{ line: 2, column: 10}, source: "a string".to_string()}));
+        assert_eq!(lxr.get(), Ok( Token::String{ start: Position{ line: 3, column: 1},
+            end: Position{ line: 3, column: 29}, source: "a line\nbreak and \u{0102} ".to_string()}));
+        assert_eq!(lxr.get(), Ok( Token::String{ start: Position{ line: 4, column: 1},
+            end: Position{ line: 4, column: 19}, source: "\" a single quote".to_string()}));
+    }
+
+    #[test]
     fn test_char_literal_unicode() {
-        let txt = " '\\u{0231}' '\\u{1023}'";
+        let txt = " '\\u{0231}' '\\u{1023}' '\\U{06af}'";
         let mut lxr = Lexer::create(txt.to_string().into_bytes());
 
         assert_eq!(lxr.get(), Ok( Token::Char{ start: Position{ line: 1, column: 2}, ch: '\u{0231}' }));
         assert_eq!(lxr.get(), Ok( Token::Char{ start: Position{ line: 1, column: 13}, ch: '\u{1023}' }));
+        assert_eq!(lxr.get(), Ok( Token::Char{ start: Position{ line: 1, column: 24}, ch: '\u{06af}' }));
     }
 
     #[test]
@@ -640,6 +680,4 @@ mod test {
         assert_eq!(lxr.get(),  Ok( Token::Hash( Position{ column: 6, line: 4 } )));
         assert_eq!(lxr.get(),  Ok( Token::EndOfFile));
     }
-
-
 }
