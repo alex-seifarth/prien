@@ -1,5 +1,6 @@
 use super::Token;
 use util::utf8::{Stream, Position};
+use crate::tokens::IntegerBase;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LexerError {
@@ -8,6 +9,7 @@ pub enum LexerError {
     UnexpectedEndOfFile(Position),
     Unexpected(Position, char),
     InvalidEscapedUnicode(Position, String, u32),
+    ExpectedDigit(Position),
 }
 
 pub struct Lexer {
@@ -90,8 +92,50 @@ impl Lexer {
             '_' | 'a'..='z' | 'A'..='Z' => self.scan_identifier(ch),
             '\'' => self.scan_char_literal(),
             '"' => self.scan_string(),
-
+            '0'..='9' => self.scan_numbers(ch),
             _ => Err( LexerError::Unexpected( self.pos(), ch ) )
+        }
+    }
+
+    fn scan_numbers(&mut self, ch: char) -> Result<Token, LexerError> {
+        let pos = self.pos();
+        let mut str = vec![ch];
+        return match self.stream.peek() {
+            Err(()) | Ok( None ) => Ok( Token::Integer {start: pos, end: pos,
+                source: ch.to_string(), value: Lexer::hex_digit_2_value(ch) as u64,
+                base: IntegerBase::Decimal } ),
+            Ok( Some('x')) | Ok( Some('X')) => {
+                str.push( self.stream.get().unwrap().unwrap() );
+                self.scan_hex(str, pos)
+            },
+            _ => {
+                Ok( Token::EndOfFile )
+            },
+        }
+    }
+
+    fn scan_hex(&mut self, mut str: Vec<char>, start: Position) -> Result<Token, LexerError> {
+        let mut value: u64 = 0;
+        let mut count: usize = 0;
+        loop {
+            let ch = match self.stream.peek() {
+                Err( () ) | Ok( None ) => break,
+                Ok( Some( ch ) ) => ch,
+            };
+            match ch {
+                '0'..='9' | 'a'..='f' | 'A'..='F' => {
+                    self.stream.advance();
+                    value = (value << 4) + Lexer::hex_digit_2_value(ch) as u64;
+                    str.push(ch);
+                    count += 1;
+                },
+                _ => break,
+            }
+        }
+        match count {
+            0 => Err( LexerError::ExpectedDigit(self.pos())),
+            _ => Ok( Token::Integer { start, end: self.pos(), source: str.into_iter().collect(),
+                        value, base: IntegerBase::Hexadecimal })
         }
     }
 
@@ -420,6 +464,17 @@ impl Lexer {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_integer_hex() {
+        let txt = concat!("0x0 0XaF22");
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+
+        assert_eq!(lxr.get(), Ok( Token::Integer {start: Position{line: 1, column: 1},
+            end: Position{line: 1, column: 3}, source: "0x0".to_string(), value: 0, base: IntegerBase::Hexadecimal}));
+        assert_eq!(lxr.get(), Ok( Token::Integer {start: Position{line: 1, column: 5},
+            end: Position{line: 1, column: 10}, source: "0XaF22".to_string(), value: 0xaf22, base: IntegerBase::Hexadecimal}));
+    }
 
     #[test]
     fn test_string() {
