@@ -129,6 +129,10 @@ impl Lexer {
                     str.push(ch);
                     count += 1;
                 },
+                '\'' => {
+                    self.stream.advance();
+                    str.push(ch);
+                }
                 _ => break,
             }
         }
@@ -467,13 +471,15 @@ mod test {
 
     #[test]
     fn test_integer_hex() {
-        let txt = concat!("0x0 0XaF22");
+        let txt = concat!("0x0 0XaF22 0x8000'0001");
         let mut lxr = Lexer::create(txt.to_string().into_bytes());
 
         assert_eq!(lxr.get(), Ok( Token::Integer {start: Position{line: 1, column: 1},
             end: Position{line: 1, column: 3}, source: "0x0".to_string(), value: 0, base: IntegerBase::Hexadecimal}));
         assert_eq!(lxr.get(), Ok( Token::Integer {start: Position{line: 1, column: 5},
             end: Position{line: 1, column: 10}, source: "0XaF22".to_string(), value: 0xaf22, base: IntegerBase::Hexadecimal}));
+        assert_eq!(lxr.get(), Ok( Token::Integer {start: Position{line: 1, column: 12},
+            end: Position{line: 1, column: 22}, source: "0x8000'0001".to_string(), value: 0x80000001, base: IntegerBase::Hexadecimal}));
     }
 
     #[test]
