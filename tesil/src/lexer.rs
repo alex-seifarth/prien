@@ -108,9 +108,42 @@ impl Lexer {
                 str.push( self.stream.get().unwrap().unwrap() );
                 self.scan_hex(str, pos)
             },
+            Ok( Some('b')) | Ok( Some('B')) => {
+                str.push( self.stream.get().unwrap().unwrap() );
+                self.scan_binary(str, pos)
+            }
             _ => {
                 Ok( Token::EndOfFile )
             },
+        }
+    }
+
+    fn scan_binary(&mut self, mut str: Vec<char>, start: Position) -> Result<Token, LexerError> {
+        let mut value: u64 = 0;
+        let mut count: usize = 0;
+        loop {
+            let ch = match self.stream.peek() {
+                Err( () ) | Ok( None ) => break,
+                Ok( Some( ch ) ) => ch,
+            };
+            match ch {
+                '0' | '1' => {
+                    self.stream.advance();
+                    value = (value << 1) + (if ch == '0' {0} else {1});
+                    str.push(ch);
+                    count += 1;
+                },
+                '\'' => {
+                    self.stream.advance();
+                    str.push(ch);
+                }
+                _ => break,
+            }
+        }
+        match count {
+            0 => Err( LexerError::ExpectedDigit(self.pos())),
+            _ => Ok( Token::Integer { start, end: self.pos(), source: str.into_iter().collect(),
+                value, base: IntegerBase::Binary })
         }
     }
 
@@ -468,6 +501,19 @@ impl Lexer {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_integer_bin() {
+        let txt = concat!("0b11'00 0B1111 0b1100'0011");
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+
+        assert_eq!(lxr.get(), Ok( Token::Integer {start: Position{line: 1, column: 1},
+            end: Position{line: 1, column: 7}, source: "0b11'00".to_string(), value: 12, base: IntegerBase::Binary}));
+        assert_eq!(lxr.get(), Ok( Token::Integer {start: Position{line: 1, column: 9},
+            end: Position{line: 1, column: 14}, source: "0B1111".to_string(), value: 15, base: IntegerBase::Binary}));
+        assert_eq!(lxr.get(), Ok( Token::Integer {start: Position{line: 1, column: 16},
+            end: Position{line: 1, column: 26}, source: "0b1100'0011".to_string(), value: 0xc3, base: IntegerBase::Binary}));
+    }
 
     #[test]
     fn test_integer_hex() {
