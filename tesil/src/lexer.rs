@@ -101,20 +101,42 @@ impl Lexer {
         let pos = self.pos();
         let mut str = vec![ch];
         return match self.stream.peek() {
-            Err(()) | Ok( None ) => Ok( Token::Integer {start: pos, end: pos,
-                source: ch.to_string(), value: Lexer::hex_digit_2_value(ch) as u64,
-                base: IntegerBase::Decimal } ),
-            Ok( Some('x')) | Ok( Some('X')) => {
+            Ok( Some('x')) | Ok( Some('X')) if ch == '0' => {
                 str.push( self.stream.get().unwrap().unwrap() );
                 self.scan_hex(str, pos)
             },
-            Ok( Some('b')) | Ok( Some('B')) => {
+            Ok( Some('b')) | Ok( Some('B'))  if ch == '0' => {
                 str.push( self.stream.get().unwrap().unwrap() );
                 self.scan_binary(str, pos)
             }
             _ => {
-                Ok( Token::EndOfFile )
+                self.scan_decimal(str, pos, ch)
             },
+        }
+    }
+
+    fn scan_decimal(&mut self, mut str: Vec<char>, _start: Position, ch: char) -> Result<Token, LexerError> {
+        let start = self.pos();
+        let mut int_value: u64 = Lexer::hex_digit_2_value(ch) as u64;
+        loop { // integer part
+            let ch2 = match self.stream.peek() {
+                Err(()) | Ok( None ) => return Ok( Token::Integer {start, end: self.pos(),
+                    source: str.into_iter().collect(), value: int_value, base: IntegerBase::Decimal } ),
+                Ok( Some( c)) => c,
+            };
+            match ch2 {
+                '0'..='9' => {
+                    self.stream.advance();
+                    str.push(ch2);
+                    int_value = 10 * int_value + Lexer::hex_digit_2_value(ch2) as u64;
+                },
+                '\'' => {
+                    self.stream.advance();
+                    str.push(ch2);
+                },
+                _ => return Ok( Token::Integer {start, end: self.pos(),
+                        source: str.into_iter().collect(), value: int_value, base: IntegerBase::Decimal } ),
+            }
         }
     }
 
@@ -501,6 +523,22 @@ impl Lexer {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_integer_decimal() {
+        let txt = concat!("0 22 100'0001 9091");
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+
+        assert_eq!(lxr.get(), Ok( Token::Integer {start: Position{line: 1, column: 1},
+            end: Position{line: 1, column: 1}, source: "0".to_string(), value: 0, base: IntegerBase::Decimal}));
+        assert_eq!(lxr.get(), Ok( Token::Integer {start: Position{line: 1, column: 3},
+            end: Position{line: 1, column: 4}, source: "22".to_string(), value: 22, base: IntegerBase::Decimal}));
+        assert_eq!(lxr.get(), Ok( Token::Integer {start: Position{line: 1, column: 6},
+            end: Position{line: 1, column: 13}, source: "100'0001".to_string(), value: 1000001, base: IntegerBase::Decimal}));
+        assert_eq!(lxr.get(), Ok( Token::Integer {start: Position{line: 1, column: 15},
+            end: Position{line: 1, column: 18}, source: "9091".to_string(), value: 9091, base: IntegerBase::Decimal}));
+    }
+
 
     #[test]
     fn test_integer_bin() {
