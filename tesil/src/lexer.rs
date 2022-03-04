@@ -1,6 +1,7 @@
-use super::Token;
+use std::num::{ParseFloatError, ParseIntError};
+use std::str::FromStr;
+use super::{Token, IntegerBase};
 use util::utf8::{Stream, Position};
-use crate::tokens::IntegerBase;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LexerError {
@@ -10,6 +11,8 @@ pub enum LexerError {
     Unexpected(Position, char),
     InvalidEscapedUnicode(Position, String, u32),
     ExpectedDigit(Position),
+    IntegerError(Position, String, ParseIntError),
+    FloatError(Position, String, ParseFloatError),
 }
 
 pub struct Lexer {
@@ -110,32 +113,85 @@ impl Lexer {
                 self.scan_binary(str, pos)
             }
             _ => {
-                self.scan_decimal(str, pos, ch)
+                self.scan_decimal(str, pos)
             },
         }
     }
 
-    fn scan_decimal(&mut self, mut str: Vec<char>, _start: Position, ch: char) -> Result<Token, LexerError> {
-        let start = self.pos();
-        let mut int_value: u64 = Lexer::hex_digit_2_value(ch) as u64;
+    fn scan_decimal(&mut self, mut str: Vec<char>, start: Position) -> Result<Token, LexerError> {
+        let mut source_str = str.clone();
         loop { // integer part
             let ch2 = match self.stream.peek() {
-                Err(()) | Ok( None ) => return Ok( Token::Integer {start, end: self.pos(),
-                    source: str.into_iter().collect(), value: int_value, base: IntegerBase::Decimal } ),
+                Err(()) | Ok( None ) => return Lexer::string_to_u64(
+                    source_str.into_iter().collect(), str.into_iter().collect(), start,
+                    self.pos(), IntegerBase::Decimal),
                 Ok( Some( c)) => c,
             };
             match ch2 {
                 '0'..='9' => {
                     self.stream.advance();
                     str.push(ch2);
-                    int_value = 10 * int_value + Lexer::hex_digit_2_value(ch2) as u64;
+                    source_str.push(ch2);
                 },
                 '\'' => {
                     self.stream.advance();
                     str.push(ch2);
                 },
-                _ => return Ok( Token::Integer {start, end: self.pos(),
-                        source: str.into_iter().collect(), value: int_value, base: IntegerBase::Decimal } ),
+                '.' => {
+                    self.stream.advance();
+                    str.push(ch2);
+                    source_str.push(ch2);
+                    return self.scan_fractional(start, str, source_str)
+                },
+                _ => return Lexer::string_to_u64(source_str.into_iter().collect(),
+                                                 str.into_iter().collect(), start,
+                                                 self.pos(), IntegerBase::Decimal)
+            }
+        }
+    }
+
+    fn string_to_u64(value: String, source: String, start: Position, end: Position, base: IntegerBase)
+            -> Result<Token, LexerError> {
+        let base_value = match base {
+            IntegerBase::Decimal => 10,
+            IntegerBase::Hexadecimal => 16,
+            IntegerBase::Binary => 2,
+            IntegerBase::Octal => 8,
+        };
+        match u64::from_str_radix(value.as_ref(), base_value) {
+            Ok(v) => Ok( Token::Integer {start, end, source, value: v, base}),
+            Err(err) => Err( LexerError::IntegerError(start, value, err)),
+        }
+    }
+
+    fn string_to_f64(value: String, source: String, start: Position, end: Position)
+            -> Result<Token, LexerError> {
+        match f64::from_str(value.as_ref()) {
+            Ok(v) => Ok( Token::FloatNumber {start, end, source, value: v}),
+            Err(err) => Err( LexerError::FloatError(start, source, err) ),
+        }
+    }
+
+    fn scan_fractional(&mut self, start: Position, mut source: Vec<char>, mut digits: Vec<char>) -> Result<Token, LexerError> {
+        loop {
+            let ch2 = match self.stream.peek() {
+                Err(()) | Ok(None) => return Lexer::string_to_f64(digits.into_iter().collect(),
+                                                                  source.into_iter().collect(), start, self.pos()),
+                Ok(Some(c)) => c,
+            };
+            match ch2 {
+                '0'..='9' => {
+                    self.stream.advance();
+                    digits.push(ch2);
+                    source.push(ch2);
+                },
+                '\'' => {
+                    self.stream.advance();
+                    source.push(ch2);
+                },
+                _ => return Lexer::string_to_f64(digits.into_iter().collect(),
+                                                 source.into_iter().collect(), start,
+                                                 self.pos())
             }
         }
     }
@@ -523,6 +579,19 @@ impl Lexer {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_float_noexp() {
+        let txt = "0.1 129.9011 2'001.4";
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+
+        assert_eq!(lxr.get(), Ok( Token::FloatNumber {start: Position{ line: 1, column: 1},
+            end: Position{ line: 1, column: 3}, source: "0.1".to_string(), value: 0.1 }));
+        assert_eq!(lxr.get(), Ok( Token::FloatNumber {start: Position{ line: 1, column: 5},
+            end: Position{ line: 1, column: 12}, source: "129.9011".to_string(), value: 129.9011}));
+        assert_eq!(lxr.get(), Ok( Token::FloatNumber {start: Position{ line: 1, column: 14},
+            end: Position{ line: 1, column: 20}, source: "2'001.4".to_string(), value: 2001.4}));
+    }
 
     #[test]
     fn test_integer_decimal() {
