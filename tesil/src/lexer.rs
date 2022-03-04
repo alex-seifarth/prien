@@ -118,33 +118,33 @@ impl Lexer {
         }
     }
 
-    fn scan_decimal(&mut self, mut str: Vec<char>, start: Position) -> Result<Token, LexerError> {
-        let mut source_str = str.clone();
+    fn scan_decimal(&mut self, mut source: Vec<char>, start: Position) -> Result<Token, LexerError> {
+        let mut digits = source.clone();
         loop { // integer part
             let ch2 = match self.stream.peek() {
                 Err(()) | Ok( None ) => return Lexer::string_to_u64(
-                    source_str.into_iter().collect(), str.into_iter().collect(), start,
+                    digits.into_iter().collect(), source.into_iter().collect(), start,
                     self.pos(), IntegerBase::Decimal),
                 Ok( Some( c)) => c,
             };
             match ch2 {
                 '0'..='9' => {
                     self.stream.advance();
-                    str.push(ch2);
-                    source_str.push(ch2);
+                    source.push(ch2);
+                    digits.push(ch2);
                 },
                 '\'' => {
                     self.stream.advance();
-                    str.push(ch2);
+                    source.push(ch2);
                 },
                 '.' => {
                     self.stream.advance();
-                    str.push(ch2);
-                    source_str.push(ch2);
-                    return self.scan_fractional(start, str, source_str)
+                    source.push(ch2);
+                    digits.push(ch2);
+                    return self.scan_fractional(start, source, digits)
                 },
-                _ => return Lexer::string_to_u64(source_str.into_iter().collect(),
-                                                 str.into_iter().collect(), start,
+                _ => return Lexer::string_to_u64(digits.into_iter().collect(),
+                                                 source.into_iter().collect(), start,
                                                  self.pos(), IntegerBase::Decimal)
             }
         }
@@ -196,9 +196,8 @@ impl Lexer {
         }
     }
 
-    fn scan_binary(&mut self, mut str: Vec<char>, start: Position) -> Result<Token, LexerError> {
-        let mut value: u64 = 0;
-        let mut count: usize = 0;
+    fn scan_binary(&mut self, mut source: Vec<char>, start: Position) -> Result<Token, LexerError> {
+        let mut digits = vec![];
         loop {
             let ch = match self.stream.peek() {
                 Err( () ) | Ok( None ) => break,
@@ -207,27 +206,25 @@ impl Lexer {
             match ch {
                 '0' | '1' => {
                     self.stream.advance();
-                    value = (value << 1) + (if ch == '0' {0} else {1});
-                    str.push(ch);
-                    count += 1;
+                    source.push(ch);
+                    digits.push(ch);
                 },
                 '\'' => {
                     self.stream.advance();
-                    str.push(ch);
+                    source.push(ch);
                 }
                 _ => break,
             }
         }
-        match count {
-            0 => Err( LexerError::ExpectedDigit(self.pos())),
-            _ => Ok( Token::Integer { start, end: self.pos(), source: str.into_iter().collect(),
-                value, base: IntegerBase::Binary })
+        if digits.is_empty() {
+            return Err( LexerError::ExpectedDigit(self.pos()));
         }
+        Lexer::string_to_u64(digits.into_iter().collect(), source.into_iter().collect(),
+                start, self.pos(), IntegerBase::Binary)
     }
 
-    fn scan_hex(&mut self, mut str: Vec<char>, start: Position) -> Result<Token, LexerError> {
-        let mut value: u64 = 0;
-        let mut count: usize = 0;
+    fn scan_hex(&mut self, mut source: Vec<char>, start: Position) -> Result<Token, LexerError> {
+        let mut digits = vec![];
         loop {
             let ch = match self.stream.peek() {
                 Err( () ) | Ok( None ) => break,
@@ -236,22 +233,21 @@ impl Lexer {
             match ch {
                 '0'..='9' | 'a'..='f' | 'A'..='F' => {
                     self.stream.advance();
-                    value = (value << 4) + Lexer::hex_digit_2_value(ch) as u64;
-                    str.push(ch);
-                    count += 1;
+                    source.push(ch);
+                    digits.push(ch);
                 },
                 '\'' => {
                     self.stream.advance();
-                    str.push(ch);
+                    source.push(ch);
                 }
                 _ => break,
             }
         }
-        match count {
-            0 => Err( LexerError::ExpectedDigit(self.pos())),
-            _ => Ok( Token::Integer { start, end: self.pos(), source: str.into_iter().collect(),
-                        value, base: IntegerBase::Hexadecimal })
+        if digits.is_empty() {
+            return Err(LexerError::ExpectedDigit(self.pos()));
         }
+        Lexer::string_to_u64(digits.into_iter().collect(), source.into_iter().collect(),
+                start, self.pos(), IntegerBase::Hexadecimal)
     }
 
     fn scan_string(&mut self) -> Result<Token, LexerError> {
