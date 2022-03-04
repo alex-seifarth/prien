@@ -259,7 +259,7 @@ impl Lexer {
                 Ok( None ) => return Err( LexerError::UnexpectedEndOfFile(self.pos()) ),
                 Ok( Some('"') ) => break,
                 Ok( Some('\\') ) => {
-                    let ec = self.scan_escaped_char(&start)?;
+                    let ec = self.scan_escaped_char()?;
                     str.push(ec);
                 },
                 Ok( Some(c) ) => str.push(c),
@@ -274,7 +274,7 @@ impl Lexer {
             Err(_) => Err(LexerError::Utf8Error(start)),
             Ok(None) => Err(LexerError::UnexpectedEndOfFile(start)),
             Ok(Some('\\')) => {
-                let ec = self.scan_escaped_char(&start)?;
+                let ec = self.scan_escaped_char()?;
                 self.check_for_char('\'')?;
                 return Ok(Token::Char { start, ch: ec })
             },
@@ -285,7 +285,7 @@ impl Lexer {
         }
     }
 
-    fn scan_escaped_char(&mut self, start: &Position) -> Result<char, LexerError> {
+    fn scan_escaped_char(&mut self) -> Result<char, LexerError> {
         match self.stream.get() {
             Err( () ) => return Err( LexerError::Utf8Error(self.pos())),
             Ok( None ) => return Err( LexerError::UnexpectedEndOfFile(self.pos())),
@@ -299,12 +299,13 @@ impl Lexer {
             Ok( Some(c) ) => return Err( LexerError::Unexpected(self.pos(), c)),
         };
         self.check_for_char('{')?;
+        let unicode_start = self.pos();
         let unicode = self.scan_hex_digits(4)?;
         self.check_for_char('}')?;
         if let Some(uc) = char::from_u32(unicode.0 ) {
             return Ok( uc )
         }
-        Err( LexerError::InvalidEscapedUnicode(start.clone(), unicode.1, unicode.0 ))
+        Err( LexerError::InvalidEscapedUnicode(unicode_start, unicode.1, unicode.0 ))
     }
 
     fn scan_hex_digits(&mut self, count: i32) -> Result<(u32, String), LexerError>{
@@ -629,6 +630,56 @@ mod test {
             end: Position{line: 1, column: 10}, source: "0XaF22".to_string(), value: 0xaf22, base: IntegerBase::Hexadecimal}));
         assert_eq!(lxr.get(), Ok( Token::Integer {start: Position{line: 1, column: 12},
             end: Position{line: 1, column: 22}, source: "0x8000'0001".to_string(), value: 0x80000001, base: IntegerBase::Hexadecimal}));
+    }
+
+    #[test]
+    fn test_string_invalid_no_end() {
+        let txt = " \"this is a string without";
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+        assert_eq!(lxr.get(), Err(LexerError::UnexpectedEndOfFile( Position{ line: 1, column: 26})));
+    }
+
+    #[test]
+    fn test_string_invalid_unknown_escape() {
+        let txt = " \"an invalid escape \\i\"";
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+        assert_eq!(lxr.get(), Err(LexerError::Unexpected( Position{ line: 1, column: 22}, 'i')));
+    }
+
+    #[test]
+    fn test_string_invalid_unknown_unicode_escape_1() {
+        let txt = "\"an invalid unicode \\u{xa} \"";
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+        assert_eq!(lxr.get(), Err(LexerError::Unexpected( Position{ line: 1, column: 24}, 'x')));
+    }
+
+    #[test]
+    fn test_string_invalid_unknown_unicode_escape_2() {
+        let txt = "\"an invalid unicode \\u{d801} \"";
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+        assert_eq!(lxr.get(), Err(LexerError::InvalidEscapedUnicode( Position{ line: 1, column: 23},
+                 "d801".to_string(), 0xd801)));
+    }
+
+    #[test]
+    fn test_string_invalid_unknown_unicode_escape_3() {
+        let txt = "\"an invalid unicode \\u";
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+        assert_eq!(lxr.get(), Err(LexerError::UnexpectedEndOfFile( Position{ line: 1, column: 22} )));
+    }
+
+    #[test]
+    fn test_string_invalid_unknown_unicode_escape_4() {
+        let txt = "\"an invalid unicode \\u\"";
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+        assert_eq!(lxr.get(), Err(LexerError::Unexpected( Position{ line: 1, column: 23}, '\"')));
+    }
+
+    #[test]
+    fn test_string_invalid_unknown_unicode_escape_5() {
+        let txt = "\"an invalid unicode \\u{0041x\"";
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+        assert_eq!(lxr.get(), Err(LexerError::Unexpected( Position{ line: 1, column: 28}, 'x')));
     }
 
     #[test]
