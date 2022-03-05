@@ -143,6 +143,12 @@ impl Lexer {
                     digits.push(ch2);
                     return self.scan_fractional(start, source, digits)
                 },
+                'E' | 'e' => {
+                    self.stream.advance();
+                    digits.push(ch2);
+                    source.push(ch2);
+                    return self.scan_exponential_part(start, source, digits)
+                },
                 _ => return Lexer::string_to_u64(digits.into_iter().collect(),
                                                  source.into_iter().collect(), start,
                                                  self.pos(), IntegerBase::Decimal)
@@ -189,10 +195,58 @@ impl Lexer {
                     self.stream.advance();
                     source.push(ch2);
                 },
+                'E' | 'e' => {
+                    self.stream.advance();
+                    digits.push(ch2);
+                    source.push(ch2);
+                    return self.scan_exponential_part(start, source, digits)
+                },
                 _ => return Lexer::string_to_f64(digits.into_iter().collect(),
-                                                 source.into_iter().collect(), start,
-                                                 self.pos())
+                     source.into_iter().collect(), start,self.pos())
             }
+        }
+    }
+
+    fn scan_exponential_part(&mut self, start: Position, mut source: Vec<char>, mut digits: Vec<char>)
+            -> Result<Token, LexerError> {
+        let mut sign_allowed = true;
+        let mut one_digit = false;
+        loop {
+            let ch = match self.stream.peek() {
+                Err(()) | Ok( None ) => break,
+                Ok( Some( ch ) ) => ch,
+            };
+            match ch {
+                '+' | '-' => {
+                    if !sign_allowed {
+                        break;
+                    }
+                    self.stream.advance();
+                    digits.push(ch);
+                    source.push(ch);
+                    sign_allowed = false;
+                },
+                '0'..='9' => {
+                    self.stream.advance();
+                    sign_allowed = false;
+                    digits.push(ch);
+                    source.push(ch);
+                    one_digit = true;
+                },
+                _ => {
+                    break;
+                }
+            }
+        }
+        if !one_digit {
+            return Err( LexerError::ExpectedDigit(self.pos()))
+        }
+        let str: String = digits.into_iter().collect();
+        match f64::from_str(&str) {
+            Err( err ) => Err( LexerError::FloatError(start,
+                                                      source.into_iter().collect(), err)),
+            Ok( value ) => Ok( Token::FloatNumber {start, end: self.pos(),
+                                                        source: source.into_iter().collect(), value}),
         }
     }
 
@@ -340,14 +394,14 @@ impl Lexer {
     }
 
     fn check_for_char(&mut self, ch: char) -> Result<(), LexerError> {
-        match self.stream.get() {
-            Err( () ) => return Err( LexerError::Utf8Error(self.pos())),
-            Ok( None ) => return Err( LexerError::UnexpectedEndOfFile(self.pos())),
-            Ok( Some(c) ) => {
+        return match self.stream.get() {
+            Err(()) => Err(LexerError::Utf8Error(self.pos())),
+            Ok(None) => Err(LexerError::UnexpectedEndOfFile(self.pos())),
+            Ok(Some(c)) => {
                 if c == ch {
-                    return Ok( () )
+                    return Ok(())
                 }
-                return Err( LexerError::Unexpected(self.pos(), c))
+                Err(LexerError::Unexpected(self.pos(), c))
             },
         };
     }
@@ -576,6 +630,15 @@ impl Lexer {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_float_with_exp() {
+        let txt = "1e6 2.3E-8";
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+
+        assert_eq!(lxr.get(), Ok( Token::FloatNumber {start: Position{ line: 1, column: 1},
+            end: Position{ line: 1, column: 3}, source: "1e6".to_string(), value: 1e6}));
+    }
 
     #[test]
     fn test_float_noexp() {
