@@ -1,13 +1,20 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 use util::*;
 
+/// Type of integer base used in the source code.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum IntegerBase {
     Binary,
-    Octal,
+    //Octal,
     Decimal,
     Hexadecimal
 }
 
+/// Lexemes for the TESIL language.
 #[derive(Clone, PartialEq, Debug)]
 pub enum Token {
     EndOfFile,

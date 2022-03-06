@@ -1,8 +1,16 @@
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
 use std::num::{ParseFloatError, ParseIntError};
 use std::str::FromStr;
 use super::{Token, IntegerBase};
 use util::utf8::{Stream, Position};
 
+/// Errors thrown by the lexical scanner while parsing the file.
+/// The scanner allows to 'look-ahead' one token using the `peek()` method. Tokens are consumed
+/// using the `get()` method.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LexerError {
     Unspecified,
@@ -15,6 +23,8 @@ pub enum LexerError {
     FloatError(Position, String, ParseFloatError),
 }
 
+/// A lexical scanner for the TESIL langauge syntax.
+///
 pub struct Lexer {
     stream: Stream,
     next: Result<Token, LexerError>
@@ -162,7 +172,7 @@ impl Lexer {
             IntegerBase::Decimal => 10,
             IntegerBase::Hexadecimal => 16,
             IntegerBase::Binary => 2,
-            IntegerBase::Octal => 8,
+            // IntegerBase::Octal => 8,
         };
         match u64::from_str_radix(value.as_ref(), base_value) {
             Ok(v) => Ok( Token::Integer {start, end, source, value: v, base}),
