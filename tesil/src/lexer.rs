@@ -5,7 +5,7 @@
  */
 use std::num::{ParseFloatError, ParseIntError};
 use std::str::FromStr;
-use super::{Token, IntegerBase};
+use super::tokens::{Token, IntegerBase};
 use util::utf8::{Stream, Position};
 
 /// Errors thrown by the lexical scanner while parsing the file.
@@ -59,7 +59,7 @@ impl Lexer {
         }
     }
 
-    fn pos(&self) -> Position {
+    pub fn pos(&self) -> Position {
         self.stream.pos()
     }
 
@@ -86,10 +86,10 @@ impl Lexer {
             '[' => Ok( Token::LeftBracket(self.pos())),
             ']' => Ok( Token::RightBracket(self.pos())),
             '~' => Ok( Token::Tilde(self.pos())),
-            '!' => Ok( Token::ExclamationMark(self.pos())),
             ';' => Ok( Token::Semicolon(self.pos())),
             ',' => Ok( Token::Comma(self.pos())),
             '#' => Ok( Token::Hash(self.pos())),
+            '!' => self.scan_exclamation_mark(),
             '<' => self.scan_less(),
             '>' => self.scan_greater(),
             '=' => self.scan_equals(),
@@ -457,7 +457,20 @@ impl Lexer {
             "expect"    => Ok( Token::KwExpect(start) ),
             "let"       => Ok( Token::KwLet(start) ),
             "mut"       => Ok( Token::KwMut(start) ),
+            "true"      => Ok( Token::KwTrue(start) ),
+            "false"     => Ok( Token::KwFalse(start) ),
             _           => Ok( Token::Identifier {start, source: str, end: self.pos() })
+        }
+    }
+
+    fn scan_exclamation_mark(&mut self) -> Result<Token, LexerError> {
+        let pos = self.pos();
+        match self.stream.peek() {
+            Ok( Some('=') ) => {
+                self.stream.advance();
+                Ok( Token::Unequal(pos) )
+            },
+            _ => Ok( Token::ExclamationMark(pos) )
         }
     }
 
@@ -823,7 +836,7 @@ mod test {
     fn test_keywords() {
         let txt = concat!("import i8 i16 i32 i64 u8 u16 u32 u64 \n",
             "bool f32 f64 char fn struct enum\n",
-            "type break continue expect let mut");
+            "type break continue expect let mut true false");
         let mut lxr = Lexer::create(txt.to_string().into_bytes());
 
         assert_eq!(lxr.get(), Ok(Token::KwImport( Position{ column: 1, line: 1} )));
@@ -850,6 +863,9 @@ mod test {
         assert_eq!(lxr.get(), Ok(Token::KwExpect( Position{ column: 21, line: 3} )));
         assert_eq!(lxr.get(), Ok(Token::KwLet( Position{ column: 28, line: 3} )));
         assert_eq!(lxr.get(), Ok(Token::KwMut( Position{ column: 32, line: 3} )));
+        assert_eq!(lxr.get(), Ok(Token::KwTrue( Position{ column: 36, line: 3} )));
+        assert_eq!(lxr.get(), Ok(Token::KwFalse( Position{ column: 41, line: 3} )));
+
     }
 
     #[test]
@@ -863,6 +879,16 @@ mod test {
             source: "_anotherOne1".to_string(), end: Position{ line:1, column: 26}} ) );
         assert_eq!(lxr.get(), Ok(Token::Identifier{start: Position{ line: 1, column: 28},
             source: "Zzz".to_string(), end: Position{ line:1, column: 30}} ) );
+    }
+
+    #[test]
+    fn test_exclamation_mark() {
+        let txt = "!= !";
+        let mut lxr = Lexer::create(txt.to_string().into_bytes());
+
+        assert_eq!(lxr.get(), Ok(Token::Unequal(Position { column: 1, line: 1 })));
+        assert_eq!(lxr.get(), Ok(Token::ExclamationMark(Position { column: 4, line: 1 })));
+        assert_eq!(lxr.get(), Ok( Token::EndOfFile));
     }
 
     #[test]

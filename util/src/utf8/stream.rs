@@ -4,12 +4,19 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use super::Decoder;
+use std::fmt::{Display, Formatter};
 
 /// Position within a text file.
 #[derive(Copy, Clone, PartialEq, Eq, Default, Debug)]
 pub struct Position {
     pub line: u32,
     pub column: u32,
+}
+
+impl Display for Position {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "line: {}, column: {}", self.line, self.column)
+    }
 }
 
 /// A UTF-8 encoded stream of characters readable in forward manner with peek (look-ahead) function.

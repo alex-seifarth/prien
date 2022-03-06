@@ -59,6 +59,7 @@ pub enum Token {
     Range(utf8::Position),          // '..'
     ScopeSep(utf8::Position),       // '::'
     Equals(utf8::Position),         // '=='
+    Unequal(utf8::Position),        // '!='
     ShiftRight(utf8::Position),     // '>>'
     ShiftLeft(utf8::Position),      // '<<'
 
@@ -131,4 +132,6 @@ pub enum Token {
     KwExpect(utf8::Position),       // 'expect'
     KwLet(utf8::Position),          // 'let'
     KwMut(utf8::Position),          // 'mut'
+    KwFalse(utf8::Position),        // 'false'
+    KwTrue(utf8::Position),         // 'true'
 }
