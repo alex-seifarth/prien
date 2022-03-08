@@ -4,10 +4,14 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+extern crate core;
+
 mod tokens;
 mod lexer;
 mod ast;
 mod parser;
+
+pub mod util;
 
 pub use lexer::LexerError;
 pub use lexer::Lexer;

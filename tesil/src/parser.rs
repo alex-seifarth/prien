@@ -130,7 +130,6 @@ mod test {
     use super::*;
     use util::utf8::Position;
     use super::super::tokens::IntegerBase;
-    //use super::super::lexer::LexerError;
 
     fn position(line: u32, column: u32) -> Position {
         Position{ line, column }
